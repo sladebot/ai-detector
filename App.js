@@ -2,6 +2,9 @@ import React, { useEffect, useRef, useState } from 'react';
 import { StyleSheet, Text, View, TouchableOpacity, ActivityIndicator, Image } from 'react-native';
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import axios from 'axios';
+import { extractTextFromImage } from './utils/ocr';
+import { checkIfTextIsAIGenerated } from './utils/aiDetect';
+import ResultDisplay from './components/ResultDisplay';
 
 export default function App() {
   const cameraRef = useRef(null);
@@ -9,6 +12,7 @@ export default function App() {
   const [capturedImage, setCapturedImage] = useState(null);
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState(null);
+  const [text, setText] = useState('');
 
   useEffect(() => {
     if (!permission) {
@@ -18,33 +22,23 @@ export default function App() {
 
   const takePicture = async () => {
     if (cameraRef.current) {
-      const photo = await cameraRef.current.takePictureAsync({ base64: true });
+      const photo = await cameraRef.current.takePictureAsync({ base64: true, quality: 0.6 });
       setCapturedImage(photo);
-      detectAI(photo.base64);
+      setLoading(true);
+      const extractedText = await extractTextFromImage(photo.base64);
+      console.log("Extracted text:", extractedText);
+
+      setText(extractedText);
+      const score = await checkIfTextIsAIGenerated(extractedText);
+      setResult(`${score}% AI Generated`);
+      setLoading(false);
     }
-  };
-
-  const detectAI = async (base64) => {
-    setLoading(true);
-    setResult(null);
-
-    try {
-      const response = await axios.post('http://your-api-endpoint.com/detect', {
-        image: base64,
-      });
-
-      setResult(response.data?.result || 'No result returned');
-    } catch (err) {
-      console.error('Detection failed:', err.message);
-      setResult('Error occurred while detecting.');
-    }
-
-    setLoading(false);
   };
 
   const reset = () => {
     setCapturedImage(null);
     setResult(null);
+    setText('');
   };
 
   if (!permission) {
@@ -78,13 +72,11 @@ export default function App() {
           {loading ? (
             <ActivityIndicator size="large" color="#0000ff" />
           ) : (
-            <>
-              <Text style={styles.resultText}>Result: {result}</Text>
-              <TouchableOpacity onPress={reset} style={styles.retryButton}>
-                <Text style={styles.captureText}>Retake</Text>
-              </TouchableOpacity>
-            </>
+            <ResultDisplay result={result} text={text} />
           )}
+          <TouchableOpacity onPress={reset} style={styles.retryButton}>
+            <Text style={styles.captureText}>Retake</Text>
+          </TouchableOpacity>
         </View>
       )}
     </View>
@@ -123,7 +115,6 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     marginBottom: 20,
   },
-  resultText: { color: '#fff', fontSize: 18, marginBottom: 10 },
   retryButton: {
     backgroundColor: '#fff',
     padding: 10,
